@@ -1,180 +1,197 @@
 package main
 
-//  Generate RSA signing files via shell (adjust as needed):
-//
-//  $ openssl genrsa -out app.rsa 1024
-//  $ openssl rsa -in app.rsa -pubout > app.rsa.pub
-//
-// Code borrowed and modified from the following sources:
-// https://www.youtube.com/watch?v=dgJFeqeXVKw
-// https://goo.gl/ofVjK4
-// https://github.com/dgrijalva/jwt-go
-//
-
 import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
-	"crypto/rsa"
-	"github.com/codegangsta/negroni"
-	"github.com/dgrijalva/jwt-go"
-	"github.com/dgrijalva/jwt-go/request"
+	jwt "github.com/dgrijalva/jwt-go"
+	"github.com/gorilla/mux"
 )
 
-const (
-	// For simplicity these files are in the same folder as the app binary.
-	// You shouldn't do this in production.
-	privKeyPath = "app.rsa"
-	pubKeyPath  = "app.rsa.pub"
-)
+var mySigningKey = []byte("captainjacksparrowsayshi")
 
-var (
-	verifyKey *rsa.PublicKey
-	signKey   *rsa.PrivateKey
-)
+type Secret struct {
+	ID       string `json:"id,omitempty"`
+	Hostname string `json:"hostname,omitempty"`
+	Active   bool
+}
 
-func fatal(err error) {
+var deviceSecret []Secret
+
+func getIds(w http.ResponseWriter, r *http.Request) {
+	validToken, err := GenerateJWT()
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println("Failed to generate token")
 	}
+
+	client := &http.Client{}
+	req, _ := http.NewRequest("GET", "http://localhost:8000/deviceSecret", nil)
+	req.Header.Set("Token", validToken)
+	res, err := client.Do(req)
+	if err != nil {
+		fmt.Fprintf(w, "Error: %s", err.Error())
+	}
+
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Fprintf(w, string(body))
+}
+func storeId(w http.ResponseWriter, r *http.Request) {
+	//validToken, err := GenerateJWT()
+	//if err != nil {
+	//	fmt.Println("Failed to generate token")
+	//}
+	params := mux.Vars(r)
+	var secrets Secret
+	_ = json.NewDecoder(r.Body).Decode(&deviceSecret)
+	secrets.ID = params["id"]
+	fmt.Println(secrets.ID)
+
+	secrets.Hostname = params["hostname"]
+	fmt.Println(secrets.Hostname)
+	apiUrl := "http://localhost:8000"
+	urlPath := fmt.Sprintf("/deviceSecret/%s", secrets.Hostname)
+	resources := urlPath
+	data := url.Values{}
+	data.Set("id", secrets.ID)
+	data.Set("hostname", secrets.Hostname)
+	u, _ := url.ParseRequestURI(apiUrl)
+	u.Path = resources
+	urlStr := u.String()
+	client := &http.Client{}
+	//req, _ := http.NewRequest("POST", "http://localhost:8000/deviceSecret/", nil)
+	req, _ := http.NewRequest("POST", urlStr, strings.NewReader(data.Encode()))
+	//req.Header.Set("Token", validToken)
+	fmt.Println(urlStr)
+	res, err := client.Do(req)
+	if err != nil {
+		fmt.Fprintf(w, "Error: %s", err.Error())
+	}
+
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Fprintf(w, string(body))
 }
 
-func initKeys() {
-	signBytes, err := ioutil.ReadFile(privKeyPath)
-	fatal(err)
-
-	signKey, err = jwt.ParseRSAPrivateKeyFromPEM(signBytes)
-	fatal(err)
-
-	verifyBytes, err := ioutil.ReadFile(pubKeyPath)
-	fatal(err)
-
-	verifyKey, err = jwt.ParseRSAPublicKeyFromPEM(verifyBytes)
-	fatal(err)
+type apiResponse struct {
+	AccessToken string `json:"access_token"`
+	ExpiresTime int    `json:"expires_in"`
+	TokenType   string `json:"token_type"`
 }
 
-type UserCredentials struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+func generateToken(w http.ResponseWriter, r *http.Request) {
+	//params := mux.Vars(r)
+	response := "broken"
+	url := "https://dev-z1-kqnnv.auth0.com/oauth/token"
+
+	payload := strings.NewReader("{\"grant_type\":\"client_credentials\",\"client_id\": \"1lBr0bF30njM3qHTzHGsaYc5Z4RZaEL8\",\"client_secret\": \"5dUpVPFu6sof7u4aDjHHR59dzRadR1k1zh6q7x3dJuCQTIzhX9TDWGIlbpY76-tb\",\"audience\": \"zedlocal\"}")
+
+	req, _ := http.NewRequest("POST", url, payload)
+
+	req.Header.Add("content-type", "application/json")
+
+	res, _ := http.DefaultClient.Do(req)
+
+	defer res.Body.Close()
+
+	body, _ := ioutil.ReadAll(res.Body)
+	s := new(apiResponse)
+	err := json.Unmarshal(body, &s)
+	if err != nil {
+		fmt.Println("Whoops", err)
+	}
+	fmt.Println("Access Token", s.AccessToken)
+
+	response = storeToken(*s)
+	fmt.Println(response)
+
+	if response == "broken" {
+		fmt.Println("Its broken")
+	} else {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(s.AccessToken))
+	}
+
 }
 
-type User struct {
-	ID       int    `json:"id"`
-	Name     string `json:"name"`
-	Username string `json:"username"`
-	Password string `json:"password"`
+func storeToken(s apiResponse) string {
+	fmt.Println("In StoreToken")
+	var response = "success"
+	validToken, err := GenerateJWT()
+
+	var secrets Secret
+	secrets.ID = "randonID"
+	fmt.Println(secrets.ID)
+	secrets.Hostname = s.AccessToken
+	fmt.Println(secrets.Hostname)
+	fmt.Println(secrets.Hostname)
+	apiUrl := "http://localhost:8000"
+	urlPath := fmt.Sprintf("/deviceSecret/%s", secrets.Hostname)
+	resources := urlPath
+	data := url.Values{}
+	data.Set("id", secrets.ID)
+	data.Set("hostname", secrets.Hostname)
+	//fmt.Println(secrets.ID, secrets.Hostname)
+	u, _ := url.ParseRequestURI(apiUrl)
+	u.Path = resources
+	urlStr := u.String()
+	client := &http.Client{}
+	//req, _ := http.NewRequest("POST", "http://localhost:8000/deviceSecret/", nil)
+	req, _ := http.NewRequest("POST", urlStr, strings.NewReader(data.Encode()))
+	req.Header.Set("Token", validToken)
+	res, err := client.Do(req)
+	fmt.Println(res.StatusCode)
+	if res.StatusCode > 200 {
+		response = "broken"
+	}
+	if err != nil {
+		fmt.Println("Error:", err)
+	}
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println(string(body))
+	return response
+}
+func GenerateJWT() (string, error) {
+	token := jwt.New(jwt.SigningMethodHS256)
+
+	claims := token.Claims.(jwt.MapClaims)
+
+	claims["authorized"] = true
+	claims["client"] = "Girish Dudhwal"
+	claims["exp"] = time.Now().Add(time.Minute * 30).Unix()
+
+	tokenString, err := token.SignedString(mySigningKey)
+
+	if err != nil {
+		fmt.Errorf("Something Went Wrong: %s", err.Error())
+		return "", err
+	}
+
+	return tokenString, nil
 }
 
-type Response struct {
-	Data string `json:"data"`
-}
+func handleRequests() {
+	//http.HandleFunc("/", getIds)
+	http.HandleFunc("/storeId/{id}/{hostname}", storeId)
+	http.HandleFunc("/generateToken", generateToken)
+	http.HandleFunc("/getids", getIds)
 
-type Token struct {
-	Token string `json:"token"`
-}
-
-func StartServer() {
-
-	// Non-Protected Endpoint(s)
-	http.HandleFunc("/login", LoginHandler)
-
-	// Protected Endpoints
-	http.Handle("/resource", negroni.New(
-		negroni.HandlerFunc(ValidateTokenMiddleware),
-		negroni.Wrap(http.HandlerFunc(ProtectedHandler)),
-	))
-
-	log.Println("Now listening...")
-	http.ListenAndServe(":8080", nil)
+	log.Fatal(http.ListenAndServe(":9001", nil))
 }
 
 func main() {
-
-	initKeys()
-	StartServer()
+	handleRequests()
 }
-
-func ProtectedHandler(w http.ResponseWriter, r *http.Request) {
-
-	response := Response{"Gained access to protected resource"}
-	JsonResponse(response, w)
-
-}
-
-func LoginHandler(w http.ResponseWriter, r *http.Request) {
-
-	var user UserCredentials
-
-	err := json.NewDecoder(r.Body).Decode(&user)
-
-	if err != nil {
-		w.WriteHeader(http.StatusForbidden)
-		fmt.Fprint(w, "Error in request")
-		return
-	}
-
-	if strings.ToLower(user.Username) != "someone" {
-		if user.Password != "p@ssword" {
-			w.WriteHeader(http.StatusForbidden)
-			fmt.Println("Error logging in")
-			fmt.Fprint(w, "Invalid credentials")
-			return
-		}
-	}
-
-	token := jwt.New(jwt.SigningMethodRS256)
-	claims := make(jwt.MapClaims)
-	claims["exp"] = time.Now().Add(time.Hour * time.Duration(1)).Unix()
-	claims["iat"] = time.Now().Unix()
-	token.Claims = claims
-
-	tokenString, err := token.SignedString(signKey)
-
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintln(w, "Error while signing the token")
-		fatal(err)
-	}
-
-	response := Token{tokenString}
-	JsonResponse(response, w)
-
-}
-
-func ValidateTokenMiddleware(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-
-	token, err := request.ParseFromRequest(r, request.AuthorizationHeaderExtractor,
-		func(token *jwt.Token) (interface{}, error) {
-			return verifyKey, nil
-		})
-
-	if err == nil {
-		if token.Valid {
-			next(w, r)
-		} else {
-			w.WriteHeader(http.StatusUnauthorized)
-			fmt.Fprint(w, "Token is not valid")
-		}
-	} else {
-		w.WriteHeader(http.StatusUnauthorized)
-		fmt.Fprint(w, "Unauthorized access to this resource")
-	}
-
-}
-
-func JsonResponse(response interface{}, w http.ResponseWriter) {
-
-	json, err := json.Marshal(response)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(json)
