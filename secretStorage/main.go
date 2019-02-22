@@ -15,6 +15,8 @@ import (
 	"github.com/gorilla/mux"
 )
 
+import _ "net/http/pprof"
+
 var mySigningKey = []byte("captainjacksparrowsayshi")
 
 func check(e error) {
@@ -24,9 +26,9 @@ func check(e error) {
 }
 
 type Secret struct {
-	ID       string `json:"id,omitempty"`
-	Hostname string `json:"hostname,omitempty"`
-	Active   bool
+	ID     string `json:"id,omitempty"`
+	Token  string `json:"hostname,omitempty"`
+	Active bool
 }
 
 func isAuthorized(endpoint func(http.ResponseWriter, *http.Request)) http.Handler {
@@ -80,21 +82,44 @@ func CreateID(w http.ResponseWriter, r *http.Request) {
 	secrets.ID = params["id"]
 	guid := xid.New()
 	secrets.ID = guid.String()
-	secrets.Hostname = params["hostname"]
+	secrets.Token = params["token"]
 	deviceSecret = append(deviceSecret, secrets)
 	json.NewEncoder(w).Encode(deviceSecret)
 	fileName := fmt.Sprintf("%s_token", secrets.ID)
-	fileLoc := filepath.Join("/data/secrets/", fileName)
+	fileLoc := filepath.Join("/tmp/data/secrets/", fileName)
 	err := writeGob(fileLoc, deviceSecret)
+	fmt.Println("I am over here")
+	fmt.Fprintln(w, err)
+	fmt.Println("Over here", err)
+	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	if err != nil {
-		fmt.Println(err)
-		w.WriteHeader(http.StatusInternalServerError)
+		//http.NotFound(w, r)
+		w.WriteHeader(http.StatusNotFound)
+	} else {
+		w.WriteHeader(http.StatusOK)
+		fmt.Println("Everything is Okay")
 	}
+	//m := map[string]string{
+	//	"foo": "bar",
+	//}
+	//w.Header().Add("Content-Type", "application/json")
+	//w.WriteHeader(http.StatusCreated)
+	//_ = json.NewEncoder(w).Encode(m)
 
-	err1 := os.Chown(fileLoc, 999, 999)
-	if err1 != nil {
-		fmt.Println("Error in changing file permission", err1)
+	//w.Write([]byte(secrets.ID))
+}
+
+//TODO: Improve Dumping into file process.
+func writeGob(filePath string, object interface{}) error {
+	file, err := os.Create(filePath)
+	if err == nil {
+		encoder := gob.NewEncoder(file)
+		encoder.Encode(object)
 	}
+	//err = os.Chown(filePath, 999, 999)
+	//os.Chmod(filePath, 0600)
+	file.Close()
+	return err
 }
 
 // our main function
@@ -102,25 +127,15 @@ func CreateID(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	router := mux.NewRouter()
-	deviceSecret = append(deviceSecret, Secret{ID: "1", Hostname: "Device1", Active: true})
-	deviceSecret = append(deviceSecret, Secret{ID: "2", Hostname: "Device2", Active: false})
-	deviceSecret = append(deviceSecret, Secret{ID: "3", Hostname: "Device3-3", Active: true})
+	deviceSecret = append(deviceSecret, Secret{ID: "1", Token: "Device1", Active: true})
+	deviceSecret = append(deviceSecret, Secret{ID: "2", Token: "Device2", Active: false})
+	deviceSecret = append(deviceSecret, Secret{ID: "3", Token: "Device3-3", Active: true})
 	//router.HandleFunc("/deviceSecret", GetIDs).Methods("GET")
 	router.Handle("/deviceSecret", isAuthorized(GetIDs))
 	router.HandleFunc("/deviceSecret/{id}", GetID).Methods("GET")
 	//router.HandleFunc("/deviceSecret/{id}/{hostname}", CreateID).Methods("POST")
-	router.Handle("/deviceSecret/{hostname}", isAuthorized(CreateID))
+	router.Handle("/deviceSecret/{token}", isAuthorized(CreateID))
 	//router.HandleFunc("/people/{id}", DeletePerson).Methods("DELETE")
 	log.Fatal(http.ListenAndServe(":8000", router))
 
-}
-
-func writeGob(filePath string, object interface{}) error {
-	file, err := os.Create(filePath)
-	if err == nil {
-		encoder := gob.NewEncoder(file)
-		encoder.Encode(object)
-	}
-	file.Close()
-	return err
 }
