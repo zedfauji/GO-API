@@ -1,21 +1,22 @@
 package main
 
 import (
-	"encoding/gob"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
 	"path/filepath"
 
 	"github.com/rs/xid"
 
 	jwt "github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/mux"
-)
 
-import _ "net/http/pprof"
+	_ "net/http/pprof"
+
+	"./Routes/Read"
+)
 
 var mySigningKey = []byte("captainjacksparrowsayshi")
 
@@ -27,8 +28,14 @@ func check(e error) {
 
 type Secret struct {
 	ID     string `json:"id,omitempty"`
-	Token  string `json:"hostname,omitempty"`
-	Active bool
+	Token  string `json:"token,omitempty"`
+	Active bool 
+}
+
+type ResponseSecret struct {
+	ID     string
+	Token  string
+	Active string
 }
 
 func isAuthorized(endpoint func(http.ResponseWriter, *http.Request)) http.Handler {
@@ -79,47 +86,33 @@ func CreateID(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 	var secrets Secret
 	_ = json.NewDecoder(r.Body).Decode(&deviceSecret)
-	secrets.ID = params["id"]
-	guid := xid.New()
-	secrets.ID = guid.String()
+	secrets.ID = xid.New().String()
 	secrets.Token = params["token"]
 	deviceSecret = append(deviceSecret, secrets)
-	json.NewEncoder(w).Encode(deviceSecret)
-	fileName := fmt.Sprintf("%s_token", secrets.ID)
+	fileName := fmt.Sprintf("%s.json", secrets.ID)
 	fileLoc := filepath.Join("/tmp/data/secrets/", fileName)
 	err := writeGob(fileLoc, deviceSecret)
-	fmt.Println("I am over here")
-	fmt.Fprintln(w, err)
-	fmt.Println("Over here", err)
-	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+	m := map[string]string{}
 	if err != nil {
-		//http.NotFound(w, r)
-		w.WriteHeader(http.StatusNotFound)
+		fmt.Println(err)
+		m["status"] = "broken"
+		//check(err)
 	} else {
-		w.WriteHeader(http.StatusOK)
-		fmt.Println("Everything is Okay")
+		m["status"] = "success"
+		m["id"] = secrets.ID
 	}
-	//m := map[string]string{
-	//	"foo": "bar",
-	//}
-	//w.Header().Add("Content-Type", "application/json")
-	//w.WriteHeader(http.StatusCreated)
-	//_ = json.NewEncoder(w).Encode(m)
-
-	//w.Write([]byte(secrets.ID))
+	_ = json.NewEncoder(w).Encode(m)
 }
 
 //TODO: Improve Dumping into file process.
 func writeGob(filePath string, object interface{}) error {
-	file, err := os.Create(filePath)
-	if err == nil {
-		encoder := gob.NewEncoder(file)
-		encoder.Encode(object)
-	}
+	//file, err := os.Create(filePath)
+	file, _ := json.MarshalIndent(object, "", "")
+	_ = ioutil.WriteFile(filePath, file, 0600)
+
 	//err = os.Chown(filePath, 999, 999)
 	//os.Chmod(filePath, 0600)
-	file.Close()
-	return err
+	return nil
 }
 
 // our main function
@@ -127,15 +120,12 @@ func writeGob(filePath string, object interface{}) error {
 
 func main() {
 	router := mux.NewRouter()
-	deviceSecret = append(deviceSecret, Secret{ID: "1", Token: "Device1", Active: true})
-	deviceSecret = append(deviceSecret, Secret{ID: "2", Token: "Device2", Active: false})
-	deviceSecret = append(deviceSecret, Secret{ID: "3", Token: "Device3-3", Active: true})
-	//router.HandleFunc("/deviceSecret", GetIDs).Methods("GET")
+	//deviceSecret = append(deviceSecret, Secret{ID: "1", Token: "Device1", Active: true})
+	//deviceSecret = append(deviceSecret, Secret{ID: "2", Token: "Device2", Active: false})
+	//deviceSecret = append(deviceSecret, Secret{ID: "3", Token: "Device3-3", Active: true})
 	router.Handle("/deviceSecret", isAuthorized(GetIDs))
-	router.HandleFunc("/deviceSecret/{id}", GetID).Methods("GET")
-	//router.HandleFunc("/deviceSecret/{id}/{hostname}", CreateID).Methods("POST")
+	router.HandleFunc("/deviceSecret/{id}", readoperation.ReadID).Methods("GET")
 	router.Handle("/deviceSecret/{token}", isAuthorized(CreateID))
-	//router.HandleFunc("/people/{id}", DeletePerson).Methods("DELETE")
 	log.Fatal(http.ListenAndServe(":8000", router))
 
 }
