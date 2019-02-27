@@ -20,24 +20,28 @@ type ResponseSecret struct {
 func ReadID(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 	id := params["id"]
-
+	m := map[string]string{}
+	var ResponseSecret1 []ResponseSecret
 	fileName := fmt.Sprintf("%s.json", id)
 	fileLoc := filepath.Join("/tmp/data/secrets", fileName)
 	jsonFile, err := os.Open(fileLoc)
 	if err != nil {
+		status := fmt.Sprintf("%s doesn't exist", id)
+		m["status"] = status
 		fmt.Println(err)
+	} else {
+		fmt.Println("Successfully Opened ", fileLoc)
+		byteValue, _ := ioutil.ReadAll(jsonFile)
+		err = json.Unmarshal([]byte(byteValue), &ResponseSecret1)
+		fmt.Println(err)
+		if err != nil {
+			m["status"] = "Error While reading file "
+		} else {
+			m["token"] = ResponseSecret1[0].Token
+		}
+		//fmt.Printf("%#v", ResponseSecret1)
 	}
-	fmt.Println("Successfully Opened ", fileLoc)
-	byteValue, _ := ioutil.ReadAll(jsonFile)
-	var ResponseSecret1 []ResponseSecret
-	//fmt.Println(string(byteValue))
-	v := json.Unmarshal([]byte(byteValue), &ResponseSecret1)
-	fmt.Println(v)
-	//fmt.Printf("%#v", ResponseSecret1)
-	fmt.Println("This is me", ResponseSecret1[0])
-	PrintObject(ResponseSecret1[0])
-}
 
-func PrintObject(r ResponseSecret) {
-	fmt.Printf("ID is :%s, Token is : %s ,Status : %t", r.ID, r.Token, r.Active)
+	_ = json.NewEncoder(w).Encode(m)
+
 }

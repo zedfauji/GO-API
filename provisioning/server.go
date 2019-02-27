@@ -21,7 +21,7 @@ func StartServer() {
 	//http.HandleFunc("/", getIds)
 	router.HandleFunc("/storeid/{token}", StoreToken.StoreId)
 	router.HandleFunc("/generateToken", generatetoken.GenerateToken).Methods("GET")
-	router.HandleFunc("/getids", getoperation.GetIds)
+	router.HandleFunc("/getid/{id}", getoperation.GetId)
 
 	log.Fatal(http.ListenAndServe(":9001", router))
 }

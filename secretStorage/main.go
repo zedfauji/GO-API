@@ -29,7 +29,7 @@ func check(e error) {
 type Secret struct {
 	ID     string `json:"id,omitempty"`
 	Token  string `json:"token,omitempty"`
-	Active bool 
+	Active bool
 }
 
 type ResponseSecret struct {
@@ -124,7 +124,8 @@ func main() {
 	//deviceSecret = append(deviceSecret, Secret{ID: "2", Token: "Device2", Active: false})
 	//deviceSecret = append(deviceSecret, Secret{ID: "3", Token: "Device3-3", Active: true})
 	router.Handle("/deviceSecret", isAuthorized(GetIDs))
-	router.HandleFunc("/deviceSecret/{id}", readoperation.ReadID).Methods("GET")
+	//router.HandleFunc("/deviceSecret/{id}", readoperation.ReadID).Methods("GET")
+	router.Handle("/deviceSecret/{id}", isAuthorized(readoperation.ReadID)).Methods("GET")
 	router.Handle("/deviceSecret/{token}", isAuthorized(CreateID))
 	log.Fatal(http.ListenAndServe(":8000", router))
 

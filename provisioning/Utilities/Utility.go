@@ -1,5 +1,10 @@
 package Utility
 
+import (
+	"fmt"
+	"net/url"
+)
+
 type Secret struct {
 	ID          string `json:"id,omitempty"`
 	AccessToken string `json:"token,omitempty"`
@@ -15,4 +20,14 @@ type ApiResponse struct {
 type StoreResponse struct {
 	WriteStatus string `json:"status"`
 	GeneratedID string `json:"id"`
+}
+
+func MakeURL(s string) string {
+	apiUrl := "http://localhost:8000"
+	urlPath := fmt.Sprintf("/deviceSecret/%s", s)
+	resources := urlPath
+	u, _ := url.ParseRequestURI(apiUrl)
+	u.Path = resources
+	urlStr := u.String()
+	return urlStr
 }

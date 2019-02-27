@@ -18,13 +18,14 @@ func StoreToken(s Utility.ApiResponse) string {
 	var secrets Utility.Secret
 	secrets.ID = "randonID"
 	secrets.AccessToken = s.AccessToken
-	apiUrl := "http://localhost:8000"
-	urlPath := fmt.Sprintf("/deviceSecret/%s", secrets.AccessToken)
-	resources := urlPath
+	//apiUrl := "http://localhost:8000"
+	//urlPath := fmt.Sprintf("/deviceSecret/%s", secrets.AccessToken)
+	//resources := urlPath
 	data := url.Values{}
-	u, _ := url.ParseRequestURI(apiUrl)
-	u.Path = resources
-	urlStr := u.String()
+	//u, _ := url.ParseRequestURI(apiUrl)
+	//u.Path = resources
+	//urlStr := u.String()
+	urlStr := Utility.MakeURL(s.AccessToken)
 	client := &http.Client{}
 	//req, _ := http.NewRequest("POST", "http://localhost:8000/deviceSecret/", nil)
 	req, _ := http.NewRequest("POST", urlStr, strings.NewReader(data.Encode()))
